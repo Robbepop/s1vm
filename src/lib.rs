@@ -4,8 +4,8 @@ pub mod error;
 pub use error::{Error, Result};
 
 // VM
-mod memory;
 mod export;
+mod memory;
 mod stack;
 pub use stack::*;
 mod value;

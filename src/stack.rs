@@ -1,4 +1,3 @@
-
 use crate::error::*;
 use crate::value::*;
 
@@ -13,233 +12,236 @@ pub struct StackValue(pub u64);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Frame {
-  /// Base Pointer - for params/locals.
-  pub bp: usize,
-  /// Stack Base Pointer - Base for push/pop, to make sure the function doesn't pop locals
-  pub sbp: usize,
+    /// Base Pointer - for params/locals.
+    pub bp: usize,
+    /// Stack Base Pointer - Base for push/pop, to make sure the function doesn't pop locals
+    pub sbp: usize,
 }
 
 #[derive(Debug, Clone)]
 pub struct Stack {
-  stack: Vec<StackValue>,
-  /// Current Frame
-  frame: Frame,
-  /// Maximum stack size.
-  limit: usize,
+    stack: Vec<StackValue>,
+    /// Current Frame
+    frame: Frame,
+    /// Maximum stack size.
+    limit: usize,
 }
 
 impl Stack {
-  pub fn new() -> Stack {
-    Self::new_with_limit(DEFAULT_STACK_LIMIT)
-  }
-
-  pub fn new_with_limit(limit: usize) -> Stack {
-    Stack {
-      stack: Vec::with_capacity(INIT_STACK_SIZE),
-      frame: Default::default(),
-      limit,
-    }
-  }
-
-  #[inline]
-  pub fn len(&self) -> usize {
-    self.stack.len()
-  }
-
-  /// How many values are on the current frame
-  pub fn frame_size(&self) -> usize {
-    self.len() - self.frame.sbp
-  }
-
-  fn check_overflow(&mut self, need: usize) -> Trap<usize> {
-    let len = self.len();
-    let space = self.limit - len;
-    if space < need {
-      eprintln!("StackOverflow: limit={}, len={}", self.limit, len);
-      return Err(TrapKind::StackOverflow);
+    pub fn new() -> Stack {
+        Self::new_with_limit(DEFAULT_STACK_LIMIT)
     }
 
-    // Return the current stack size.
-    Ok(len)
-  }
-
-  /// Start a new stack frame by saving the current base pointer.
-  pub fn push_frame(&mut self, params: usize, locals: usize) -> Trap<Frame> {
-    // Check if there are enough values on the current stack frame for
-    // the new function's parameters.
-    let cur_size = self.frame_size();
-    if cur_size < params {
-      eprintln!("StackOverflow: frame size={}, needed params={}", cur_size, params);
-      return Err(TrapKind::StackOverflow);
+    pub fn new_with_limit(limit: usize) -> Stack {
+        Stack {
+            stack: Vec::with_capacity(INIT_STACK_SIZE),
+            frame: Default::default(),
+            limit,
+        }
     }
 
-    // save old frame
-    let old_frame = self.frame;
-
-    // Include the params in the new stack frame.
-    let bp = self.len() - params;
-    self.frame = Frame{
-      bp,
-      sbp: bp + locals,
-    };
-
-    Ok(old_frame)
-  }
-
-  pub fn reserve_locals(&mut self, locals: usize) -> Trap<()> {
-    // Reserve stack space for the locals.
-    if locals > 0 {
-      let new_len = self.len()
-        .checked_add(locals)
-        .ok_or(TrapKind::StackOverflow)?;
-      self.stack.truncate(new_len);
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.stack.len()
     }
 
-    Ok(())
-  }
-
-  /// Remove current stack frame and restore previous frame.
-  pub fn pop_frame(&mut self, old_frame: Frame) {
-    // Drop current stack frame values.
-    self.stack.truncate(self.frame.bp);
-    // Restore old frame
-    self.frame = old_frame;
-  }
-
-  pub fn push_params(&mut self, params: &[Value]) -> Trap<usize> {
-    // Check for stackoverflow and get current stack size.
-    let len = self.check_overflow(params.len())?;
-
-    for val in params.iter() {
-      self.stack.push(StackValue::from(*val));
+    /// How many values are on the current frame
+    pub fn frame_size(&self) -> usize {
+        self.len() - self.frame.sbp
     }
-    // return original stack size.
-    Ok(len)
-  }
 
-  pub fn drop_values(&mut self, count: u32) -> Trap<()> {
-    let len = self.len();
-    let new_len = len
-      .checked_sub(count as usize)
-      .ok_or(TrapKind::StackOverflow)?;
-    self.stack.truncate(new_len);
-    Ok(())
-  }
+    fn check_overflow(&mut self, need: usize) -> Trap<usize> {
+        let len = self.len();
+        let space = self.limit - len;
+        if space < need {
+            eprintln!("StackOverflow: limit={}, len={}", self.limit, len);
+            return Err(TrapKind::StackOverflow);
+        }
 
-  #[inline]
-  pub fn tee_local(&mut self, local: LocalIdx) -> Trap<()> {
-    // Copy value from stack
-    let val = self.top_val()?;
-
-    // save to local
-    let idx = self.frame.bp + local as usize;
-    self.stack[idx] = val;
-    Ok(())
-  }
-
-  #[inline]
-  pub fn set_local(&mut self, local: LocalIdx) -> Trap<()> {
-    // pop value from stack
-    let val = self.pop_val()?;
-
-    // save to local
-    let idx = self.frame.bp + local as usize;
-    self.stack[idx] = val;
-    Ok(())
-  }
-
-  #[inline]
-  pub fn get_local(&mut self, local: LocalIdx) -> Trap<()> {
-    let idx = self.frame.bp + local as usize;
-
-    self.push_val(self.stack[idx])
-  }
-
-  #[inline]
-  pub fn set_local_val(&mut self, local: LocalIdx, val: StackValue) {
-    let idx = self.frame.bp + local as usize;
-
-    self.stack[idx] = val;
-  }
-
-  #[inline]
-  pub fn get_local_val(&mut self, local: LocalIdx) -> StackValue {
-    let idx = self.frame.bp + local as usize;
-
-    self.stack[idx]
-  }
-
-  #[inline]
-  pub fn push_val(&mut self, val: StackValue) -> Trap<()> {
-    if self.len() >=  self.limit {
-      eprintln!("StackOverflow: limit={}, len={}", self.limit, self.len());
-      return Err(TrapKind::StackOverflow);
+        // Return the current stack size.
+        Ok(len)
     }
-    //eprintln!("-- Push: {:?}", val);
-    self.stack.push(val);
-    Ok(())
-  }
 
-  pub fn pop_typed(&mut self, val_type: ValueType) -> Trap<Value> {
-    match val_type {
-      ValueType::I32 => self.pop().map(Value::I32),
-      ValueType::I64 => self.pop().map(Value::I64),
-      ValueType::F32 => self.pop().map(Value::F32),
-      ValueType::F64 => self.pop().map(Value::F64),
+    /// Start a new stack frame by saving the current base pointer.
+    pub fn push_frame(&mut self, params: usize, locals: usize) -> Trap<Frame> {
+        // Check if there are enough values on the current stack frame for
+        // the new function's parameters.
+        let cur_size = self.frame_size();
+        if cur_size < params {
+            eprintln!(
+                "StackOverflow: frame size={}, needed params={}",
+                cur_size, params
+            );
+            return Err(TrapKind::StackOverflow);
+        }
+
+        // save old frame
+        let old_frame = self.frame;
+
+        // Include the params in the new stack frame.
+        let bp = self.len() - params;
+        self.frame = Frame {
+            bp,
+            sbp: bp + locals,
+        };
+
+        Ok(old_frame)
     }
-  }
 
-  #[inline]
-  pub fn pop_val(&mut self) -> Trap<StackValue> {
-    self.stack.pop().ok_or(TrapKind::StackOverflow)
-  }
+    pub fn reserve_locals(&mut self, locals: usize) -> Trap<()> {
+        // Reserve stack space for the locals.
+        if locals > 0 {
+            let new_len = self
+                .len()
+                .checked_add(locals)
+                .ok_or(TrapKind::StackOverflow)?;
+            self.stack.truncate(new_len);
+        }
 
-  #[inline]
-  pub fn top_val(&mut self) -> Trap<StackValue> {
-    self.stack.last().map(|x| *x)
-      .ok_or(TrapKind::StackOverflow)
-  }
+        Ok(())
+    }
 
-  /// Apply a 'unop' to top value, replacing it with the results.
-  #[inline]
-  pub fn unop<F>(&mut self, op: F) -> Trap<()>
-    where F: FnOnce(&mut StackValue) -> Trap<()>
-  {
-    let mut val = self.stack.last_mut()
-      .ok_or(TrapKind::StackOverflow)?;
-    op(&mut val)
-  }
+    /// Remove current stack frame and restore previous frame.
+    pub fn pop_frame(&mut self, old_frame: Frame) {
+        // Drop current stack frame values.
+        self.stack.truncate(self.frame.bp);
+        // Restore old frame
+        self.frame = old_frame;
+    }
 
-  /// Apply a `binop` to the top two values, replacing them with the results.
-  #[inline]
-  pub fn binop<F>(&mut self, op: F) -> Trap<()>
-    where F: FnOnce(&mut StackValue, StackValue) -> Trap<()>
-  {
-    let right = self.pop_val()?;
-    let mut left = self.stack.last_mut()
-      .ok_or(TrapKind::StackOverflow)?;
-    op(&mut left, right)
-  }
+    pub fn push_params(&mut self, params: &[Value]) -> Trap<usize> {
+        // Check for stackoverflow and get current stack size.
+        let len = self.check_overflow(params.len())?;
+
+        for val in params.iter() {
+            self.stack.push(StackValue::from(*val));
+        }
+        // return original stack size.
+        Ok(len)
+    }
+
+    pub fn drop_values(&mut self, count: u32) -> Trap<()> {
+        let len = self.len();
+        let new_len = len
+            .checked_sub(count as usize)
+            .ok_or(TrapKind::StackOverflow)?;
+        self.stack.truncate(new_len);
+        Ok(())
+    }
+
+    #[inline]
+    pub fn tee_local(&mut self, local: LocalIdx) -> Trap<()> {
+        // Copy value from stack
+        let val = self.top_val()?;
+
+        // save to local
+        let idx = self.frame.bp + local as usize;
+        self.stack[idx] = val;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn set_local(&mut self, local: LocalIdx) -> Trap<()> {
+        // pop value from stack
+        let val = self.pop_val()?;
+
+        // save to local
+        let idx = self.frame.bp + local as usize;
+        self.stack[idx] = val;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn get_local(&mut self, local: LocalIdx) -> Trap<()> {
+        let idx = self.frame.bp + local as usize;
+
+        self.push_val(self.stack[idx])
+    }
+
+    #[inline]
+    pub fn set_local_val(&mut self, local: LocalIdx, val: StackValue) {
+        let idx = self.frame.bp + local as usize;
+
+        self.stack[idx] = val;
+    }
+
+    #[inline]
+    pub fn get_local_val(&mut self, local: LocalIdx) -> StackValue {
+        let idx = self.frame.bp + local as usize;
+
+        self.stack[idx]
+    }
+
+    #[inline]
+    pub fn push_val(&mut self, val: StackValue) -> Trap<()> {
+        if self.len() >= self.limit {
+            eprintln!("StackOverflow: limit={}, len={}", self.limit, self.len());
+            return Err(TrapKind::StackOverflow);
+        }
+        //eprintln!("-- Push: {:?}", val);
+        self.stack.push(val);
+        Ok(())
+    }
+
+    pub fn pop_typed(&mut self, val_type: ValueType) -> Trap<Value> {
+        match val_type {
+            ValueType::I32 => self.pop().map(Value::I32),
+            ValueType::I64 => self.pop().map(Value::I64),
+            ValueType::F32 => self.pop().map(Value::F32),
+            ValueType::F64 => self.pop().map(Value::F64),
+        }
+    }
+
+    #[inline]
+    pub fn pop_val(&mut self) -> Trap<StackValue> {
+        self.stack.pop().ok_or(TrapKind::StackOverflow)
+    }
+
+    #[inline]
+    pub fn top_val(&mut self) -> Trap<StackValue> {
+        self.stack.last().map(|x| *x).ok_or(TrapKind::StackOverflow)
+    }
+
+    /// Apply a 'unop' to top value, replacing it with the results.
+    #[inline]
+    pub fn unop<F>(&mut self, op: F) -> Trap<()>
+    where
+        F: FnOnce(&mut StackValue) -> Trap<()>,
+    {
+        let mut val = self.stack.last_mut().ok_or(TrapKind::StackOverflow)?;
+        op(&mut val)
+    }
+
+    /// Apply a `binop` to the top two values, replacing them with the results.
+    #[inline]
+    pub fn binop<F>(&mut self, op: F) -> Trap<()>
+    where
+        F: FnOnce(&mut StackValue, StackValue) -> Trap<()>,
+    {
+        let right = self.pop_val()?;
+        let mut left = self.stack.last_mut().ok_or(TrapKind::StackOverflow)?;
+        op(&mut left, right)
+    }
 }
 
 impl Default for Stack {
-  fn default() -> Stack {
-    Self::new()
-  }
+    fn default() -> Stack {
+        Self::new()
+    }
 }
 
 pub trait FromValue
 where
     Self: Sized,
 {
-  fn from_value(val: StackValue) -> Self;
+    fn from_value(val: StackValue) -> Self;
 }
 
 pub trait FromStack<T>: Sized {
-  fn push(&mut self, val: T) -> Trap<()>;
-  fn pop(&mut self) -> Trap<T>;
+    fn push(&mut self, val: T) -> Trap<()>;
+    fn pop(&mut self) -> Trap<T>;
 
-  fn pop_pair(&mut self) -> Trap<(T, T)>;
+    fn pop_pair(&mut self) -> Trap<(T, T)>;
 }
 
 macro_rules! impl_stack_value {
@@ -319,13 +321,12 @@ macro_rules! impl_stack_value_float {
 impl_stack_value_float!(f32, f64);
 
 impl From<Value> for StackValue {
-  fn from(val: Value) -> StackValue {
-    match val {
-      Value::I32(v) => StackValue(v as _),
-      Value::I64(v) => StackValue(v as _),
-      Value::F32(v) => StackValue(v.to_bits() as _),
-      Value::F64(v) => StackValue(v.to_bits() as _),
+    fn from(val: Value) -> StackValue {
+        match val {
+            Value::I32(v) => StackValue(v as _),
+            Value::I64(v) => StackValue(v as _),
+            Value::F32(v) => StackValue(v.to_bits() as _),
+            Value::F64(v) => StackValue(v.to_bits() as _),
+        }
     }
-  }
 }
-
