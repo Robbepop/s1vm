@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use s1vm::*;
+use std::time::Instant;
 
 fn main() -> Result<(), Error> {
     let mut args = std::env::args();
@@ -30,7 +31,10 @@ fn main() -> Result<(), Error> {
 
     // Call module function
     //println!("Calling:  {}({:?})", func, params);
+    let before = Instant::now();
     let ret = vm.call("main", &func, &params)?;
+    let duration = before.elapsed();
+    println!("time = {:?}", duration);
     if let Some(ret) = ret {
         println!("{}", ret);
     } else {

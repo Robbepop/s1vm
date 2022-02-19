@@ -281,7 +281,10 @@ impl Compiler {
                 I32LtS => {
                     i32_ops::lt_s(state)?;
                 }
-                _ => todo!("implment opcode"),
+                I32Eq => {
+                    i32_ops::eq(state)?;
+                }
+                unsupported => todo!("implment opcode: {:?}", unsupported),
             };
             state.pc += 1;
         }
